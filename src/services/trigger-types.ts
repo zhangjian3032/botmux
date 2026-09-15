@@ -75,6 +75,8 @@ export interface TriggerRequest {
     /** Per-turn reasoning effort. Same
      *  fresh-spawn-only semantics as `model`. */
     reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
+    /** Per-turn TraeX backend variant. Fresh-spawn-only like `model`. */
+    modelBackendVariant?: 'standard' | 'max';
   };
 }
 
@@ -264,6 +266,9 @@ export function validateTriggerRequest(raw: unknown): { ok: true; request: Trigg
   }
   if (options.reasoningEffort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(options.reasoningEffort as string)) {
     return { ok: false, status: 400, body: { ok: false, errorCode: 'bad_request', error: 'options.reasoningEffort must be one of low|medium|high|xhigh|max|ultra' } };
+  }
+  if (options.modelBackendVariant !== undefined && !['standard', 'max'].includes(options.modelBackendVariant as string)) {
+    return { ok: false, status: 400, body: { ok: false, errorCode: 'bad_request', error: 'options.modelBackendVariant must be standard or max' } };
   }
   // Mutual exclusion FIRST, before either key's scope-lock: the two keys have
   // different scopes (fresh-session vs follow-up) with opposite target shapes, so

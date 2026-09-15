@@ -17,6 +17,7 @@ export interface HeadlessSessionRecord {
   title: string;
   workingDir?: string;
   model?: string;
+  modelBackendVariant?: 'standard' | 'max';
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
   createdAt: string;
   updatedAt: string;
@@ -37,6 +38,7 @@ export interface NewHeadlessSessionRecordInput {
   title: string;
   workingDir?: string;
   model?: string;
+  modelBackendVariant?: HeadlessSessionRecord['modelBackendVariant'];
   reasoningEffort?: HeadlessSessionRecord['reasoningEffort'];
   now?: Date;
 }
@@ -94,6 +96,9 @@ function parseRecord(raw: unknown): HeadlessSessionRecord | null {
   };
   if (typeof raw.workingDir === 'string') out.workingDir = raw.workingDir;
   if (typeof raw.model === 'string') out.model = raw.model;
+  if (raw.modelBackendVariant === 'standard' || raw.modelBackendVariant === 'max') {
+    out.modelBackendVariant = raw.modelBackendVariant;
+  }
   if (
     raw.reasoningEffort === 'low' || raw.reasoningEffort === 'medium'
     || raw.reasoningEffort === 'high' || raw.reasoningEffort === 'xhigh'
@@ -128,6 +133,7 @@ export function createHeadlessRecord(input: NewHeadlessSessionRecordInput): Head
     title: input.title,
     ...(input.workingDir ? { workingDir: input.workingDir } : {}),
     ...(input.model ? { model: input.model } : {}),
+    ...(input.modelBackendVariant ? { modelBackendVariant: input.modelBackendVariant } : {}),
     ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
     createdAt: now,
     updatedAt: now,

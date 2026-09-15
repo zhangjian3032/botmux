@@ -13,6 +13,8 @@ describe('session command parsing', () => {
       '/repo',
       '--prompt-file',
       'task.md',
+      '--model-backend-variant',
+      'standard',
       '--json',
     ])).toMatchObject({
       ok: true,
@@ -21,6 +23,7 @@ describe('session command parsing', () => {
       bot: 'review-bot',
       workingDir: '/repo',
       promptFile: 'task.md',
+      modelBackendVariant: 'standard',
       json: true,
     });
   });

@@ -4294,6 +4294,7 @@ export interface CreateHeadlessSessionArgs {
   title?: string;
   workingDir?: string;
   model?: string;
+  modelBackendVariant?: 'standard' | 'max';
   reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
 }
 
@@ -4328,6 +4329,9 @@ export async function createHeadlessSession(
     };
     session.lastMessageAt = nowIso;
     session.workingDir = wd.resolvedPath;
+    if (bot.config.cliId === 'traex' && args.modelBackendVariant) {
+      session.modelBackendVariant = args.modelBackendVariant;
+    }
     if (args.reasoningEffort) session.reasoningEffort = args.reasoningEffort;
     sessionStore.updateSession(session);
     messageQueue.ensureQueue(chatId);
@@ -4356,6 +4360,7 @@ export async function createHeadlessSession(
       title,
       workingDir: wd.resolvedPath,
       model: args.model,
+      modelBackendVariant: bot.config.cliId === 'traex' ? args.modelBackendVariant : undefined,
       reasoningEffort: args.reasoningEffort,
       now: new Date(now),
     });

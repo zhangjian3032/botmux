@@ -1636,6 +1636,10 @@ async function triggerSessionTurnAdmitted(
     ? req.options.model.trim()
     : bot.config.model;
   const effectiveReasoningEffort = req.options?.reasoningEffort ?? bot.config.reasoningEffort;
+  const effectiveModelBackendVariant = bot.config.cliId === 'traex'
+    && (req.options?.modelBackendVariant === 'standard' || req.options?.modelBackendVariant === 'max')
+    ? req.options.modelBackendVariant
+    : undefined;
   if (hasReasoningControl && effectiveReasoningEffort
       && !cliModelSupportsReasoningEffort(bot.config.cliId, effectiveModel, effectiveReasoningEffort)) {
     return {
@@ -1719,6 +1723,9 @@ async function triggerSessionTurnAdmitted(
     if (hasReasoningControl && req.options?.reasoningEffort) {
       session.reasoningEffort = req.options.reasoningEffort;
     }
+    if (effectiveModelBackendVariant) {
+      session.modelBackendVariant = effectiveModelBackendVariant;
+    }
     sessionStore.updateSession(session);
     if (requestedHeadlessId) {
       saveHeadlessSession({
@@ -1729,6 +1736,7 @@ async function triggerSessionTurnAdmitted(
         title: session.title,
         workingDir: wd.workingDir,
         model: req.options?.model,
+        modelBackendVariant: effectiveModelBackendVariant,
         reasoningEffort: req.options?.reasoningEffort,
         createdAt: nowIso,
         updatedAt: nowIso,
@@ -1754,6 +1762,9 @@ async function triggerSessionTurnAdmitted(
       workingDir: wd.workingDir,
       ...(triggerModelOverride ? { spawnModelOverride: triggerModelOverride } : {}),
     };
+    if (effectiveModelBackendVariant) {
+      newDs.session.modelBackendVariant = effectiveModelBackendVariant;
+    }
     // Retain the complete opening input until a worker or repo workflow has
     // synchronously accepted it. This is both the route reservation and the
     // retry payload if a write-ahead hook/fork throws before acceptance.

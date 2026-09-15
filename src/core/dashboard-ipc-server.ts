@@ -348,6 +348,7 @@ import {
 const PROCESS_START_MS = Date.now();
 
 type HeadlessReasoningEffort = NonNullable<HeadlessSessionRecord['reasoningEffort']>;
+type HeadlessModelBackendVariant = NonNullable<HeadlessSessionRecord['modelBackendVariant']>;
 
 export interface IpcServerHandle {
   port: number;
@@ -2707,6 +2708,7 @@ function parseHeadlessCreateBody(body: unknown): {
     title?: string;
     workingDir?: string;
     model?: string;
+    modelBackendVariant?: HeadlessModelBackendVariant;
     reasoningEffort?: HeadlessReasoningEffort;
   };
 } | { ok: false; status: number; error: string } {
@@ -2718,6 +2720,7 @@ function parseHeadlessCreateBody(body: unknown): {
     title?: string;
     workingDir?: string;
     model?: string;
+    modelBackendVariant?: HeadlessModelBackendVariant;
     reasoningEffort?: HeadlessReasoningEffort;
   } = {};
   if (b.title !== undefined) {
@@ -2737,6 +2740,12 @@ function parseHeadlessCreateBody(body: unknown): {
       return { ok: false, status: 400, error: 'invalid_model' };
     }
     out.model = b.model.trim();
+  }
+  if (b.modelBackendVariant !== undefined) {
+    if (b.modelBackendVariant !== 'standard' && b.modelBackendVariant !== 'max') {
+      return { ok: false, status: 400, error: 'invalid_model_backend_variant' };
+    }
+    out.modelBackendVariant = b.modelBackendVariant;
   }
   if (b.reasoningEffort !== undefined) {
     if (!isCodexReasoningEffort(b.reasoningEffort)) {

@@ -13,7 +13,8 @@ const USAGE = `botmux session
 Usage:
   botmux session start --headless --bot <bot> --working-dir <dir>
                        --prompt-file <path> [--json]
-                       [--model <model>] [--reasoning-effort <effort>]
+                       [--model <model>] [--model-backend-variant <variant>]
+                       [--reasoning-effort <effort>]
                        [--timeout <seconds>] [--name <title>]
   botmux session send <session-id> --prompt-file <path> [--wait] [--json]
   botmux session wait <session-id> [--trigger-id <triggerId>] [--json]
@@ -53,6 +54,7 @@ type SessionParsedCommand =
       prompt?: string;
       name?: string;
       model?: string;
+      modelBackendVariant?: string;
       reasoningEffort?: string;
       timeout?: string;
       json: boolean;
@@ -173,6 +175,7 @@ function parseSessionArgs(args: readonly string[]): SessionParsedCommand {
       '--prompt-file',
       '--prompt',
       '--model',
+      '--model-backend-variant',
       '--reasoning-effort',
       '--timeout',
       '--name',
@@ -201,6 +204,7 @@ function parseSessionArgs(args: readonly string[]): SessionParsedCommand {
       prompt,
       name: one(rest, '--name')?.trim() || one(rest, '--title')?.trim(),
       model: one(rest, '--model')?.trim(),
+      modelBackendVariant: one(rest, '--model-backend-variant')?.trim(),
       reasoningEffort: one(rest, '--reasoning-effort')?.trim(),
       timeout: one(rest, '--timeout')?.trim(),
       json: has(rest, '--json'),
@@ -347,6 +351,7 @@ export async function cmdSession(args: readonly string[]): Promise<number> {
     if (parsed.bot) headlessArgs.push('--bot', parsed.bot);
     if (parsed.workingDir) headlessArgs.push('--working-dir', parsed.workingDir);
     if (parsed.model) headlessArgs.push('--model', parsed.model);
+    if (parsed.modelBackendVariant) headlessArgs.push('--model-backend-variant', parsed.modelBackendVariant);
     if (parsed.reasoningEffort) headlessArgs.push('--reasoning-effort', parsed.reasoningEffort);
     if (parsed.timeout) headlessArgs.push('--timeout', parsed.timeout);
     if (parsed.name) headlessArgs.push('--title', parsed.name);

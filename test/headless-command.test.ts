@@ -39,17 +39,27 @@ describe('headless command parsing', () => {
   });
 
   it('parses send as an existing-session run', () => {
-    const parsed = parseHeadlessArgs(['send', '--session', 'bmx-session', '--prompt', 'continue']);
+    const parsed = parseHeadlessArgs([
+      'send',
+      '--session',
+      'bmx-session',
+      '--prompt',
+      'continue',
+      '--model-backend-variant',
+      'standard',
+    ]);
     expect(parsed).toMatchObject({
       ok: true,
       kind: 'run',
       session: 'bmx-session',
       prompt: 'continue',
+      modelBackendVariant: 'standard',
     });
   });
 
   it('rejects invalid reasoning effort and unknown flags', () => {
     expect(parseHeadlessArgs(['create', '--reasoning-effort', 'extreme']).ok).toBe(false);
+    expect(parseHeadlessArgs(['run', '--model-backend-variant', 'turbo', '--prompt', 'x']).ok).toBe(false);
     expect(parseHeadlessArgs(['result', 'hl_1', '--wat']).ok).toBe(false);
   });
 
@@ -129,6 +139,7 @@ describe('headless session store', () => {
       title: 'Headless',
       workingDir: dir,
       model: 'gpt-5.6-terra',
+      modelBackendVariant: 'standard',
       reasoningEffort: 'high',
     });
     saveHeadlessSession(record);
@@ -137,6 +148,7 @@ describe('headless session store', () => {
       id,
       sessionId: 'session-1',
       model: 'gpt-5.6-terra',
+      modelBackendVariant: 'standard',
       reasoningEffort: 'high',
     });
     expect(readHeadlessSession('session-1')?.id).toBe(id);

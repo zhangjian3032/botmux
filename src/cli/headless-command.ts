@@ -14,19 +14,24 @@ import {
 import type { TriggerRequest, TriggerResponse } from '../services/trigger-types.js';
 
 type ReasoningEffort = NonNullable<HeadlessSessionRecord['reasoningEffort']>;
+type ModelBackendVariant = NonNullable<HeadlessSessionRecord['modelBackendVariant']>;
 
 const REASONING_EFFORTS = new Set<ReasoningEffort>(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
+const MODEL_BACKEND_VARIANTS = new Set<ModelBackendVariant>(['standard', 'max']);
 
 const USAGE = `botmux headless
 
 Usage:
   botmux headless create [--bot <larkAppId>] [--title <title>] [--working-dir <dir>]
-                          [--model <model>] [--reasoning-effort <effort>] [--json]
+                          [--model <model>] [--model-backend-variant <variant>]
+                          [--reasoning-effort <effort>] [--json]
   botmux headless run [--session <id>] [prompt...] [--prompt <text>|--prompt-file <path>]
                        [--bot <larkAppId>] [--title <title>] [--working-dir <dir>]
-                       [--model <model>] [--reasoning-effort <effort>]
+                       [--model <model>] [--model-backend-variant <variant>]
+                       [--reasoning-effort <effort>]
                        [--wait] [--timeout <seconds>] [--json]
   botmux headless send --session <id> [prompt...] [--prompt <text>|--prompt-file <path>]
+                        [--model-backend-variant <variant>]
                         [--wait] [--timeout <seconds>] [--json]
   botmux headless wait <id> [--trigger-id <triggerId>] [--timeout <seconds>] [--json]
   botmux headless result <id> [--trigger-id <triggerId>] [--json]
@@ -39,8 +44,8 @@ Usage:
 export type HeadlessParsedCommand =
   | { ok: true; kind: 'help' }
   | { ok: true; kind: 'list'; bot?: string; json: boolean }
-  | { ok: true; kind: 'create'; bot?: string; title?: string; workingDir?: string; model?: string; reasoningEffort?: ReasoningEffort; json: boolean }
-  | { ok: true; kind: 'run'; session?: string; prompt: string; bot?: string; title?: string; workingDir?: string; model?: string; reasoningEffort?: ReasoningEffort; wait: boolean; timeoutMs: number; json: boolean }
+  | { ok: true; kind: 'create'; bot?: string; title?: string; workingDir?: string; model?: string; modelBackendVariant?: ModelBackendVariant; reasoningEffort?: ReasoningEffort; json: boolean }
+  | { ok: true; kind: 'run'; session?: string; prompt: string; bot?: string; title?: string; workingDir?: string; model?: string; modelBackendVariant?: ModelBackendVariant; reasoningEffort?: ReasoningEffort; wait: boolean; timeoutMs: number; json: boolean }
   | { ok: true; kind: 'result'; session: string; triggerId?: string; wait: boolean; timeoutMs: number; json: boolean }
   | { ok: true; kind: 'publish'; session: string; chatId?: string; rootMessageId?: string; triggerId?: string; json: boolean }
   | { ok: true; kind: 'bind'; session: string; chatId: string; rootMessageId?: string; scope?: 'thread' | 'chat'; title?: string; replay: 'latest' | 'none'; triggerId?: string; json: boolean }
@@ -57,6 +62,14 @@ function one(args: readonly string[], flag: string): string | undefined {
 
 function has(args: readonly string[], flag: string): boolean {
   return args.some(token => token === flag);
+}
+
+function parseModelBackendVariant(value: string | undefined): ModelBackendVariant | undefined | 'invalid' {
+  if (value === undefined || !value.trim()) return undefined;
+  const trimmed = value.trim();
+  return MODEL_BACKEND_VARIANTS.has(trimmed as ModelBackendVariant)
+    ? trimmed as ModelBackendVariant
+    : 'invalid';
 }
 
 function unknownFlags(
@@ -158,7 +171,7 @@ export function parseHeadlessArgs(args: readonly string[]): HeadlessParsedComman
   }
 
   if (sub === 'create') {
-    const valueFlags = ['--bot', '--title', '--working-dir', '--model', '--reasoning-effort'];
+    const valueFlags = ['--bot', '--title', '--working-dir', '--model', '--model-backend-variant', '--reasoning-effort'];
     const bad = unknownFlags(rest, valueFlags, ['--json']);
     if (bad.length > 0) return { ok: false, error: `unknown option: ${bad.join(', ')}` };
     for (const flag of valueFlags) {
@@ -166,6 +179,8 @@ export function parseHeadlessArgs(args: readonly string[]): HeadlessParsedComman
     }
     const reasoningEffort = parseReasoningEffort(one(rest, '--reasoning-effort'));
     if (reasoningEffort === 'invalid') return { ok: false, error: 'invalid --reasoning-effort' };
+    const modelBackendVariant = parseModelBackendVariant(one(rest, '--model-backend-variant'));
+    if (modelBackendVariant === 'invalid') return { ok: false, error: 'invalid --model-backend-variant' };
     return {
       ok: true,
       kind: 'create',
@@ -173,13 +188,14 @@ export function parseHeadlessArgs(args: readonly string[]): HeadlessParsedComman
       title: one(rest, '--title')?.trim(),
       workingDir: one(rest, '--working-dir')?.trim(),
       model: one(rest, '--model')?.trim(),
+      modelBackendVariant,
       reasoningEffort,
       json: has(rest, '--json'),
     };
   }
 
   if (sub === 'run' || sub === 'send') {
-    const valueFlags = ['--session', '--bot', '--title', '--working-dir', '--model', '--reasoning-effort', '--prompt', '--prompt-file', '--timeout'];
+    const valueFlags = ['--session', '--bot', '--title', '--working-dir', '--model', '--model-backend-variant', '--reasoning-effort', '--prompt', '--prompt-file', '--timeout'];
     const bad = unknownFlags(rest, valueFlags, ['--wait', '--json']);
     if (bad.length > 0) return { ok: false, error: `unknown option: ${bad.join(', ')}` };
     for (const flag of valueFlags) {
@@ -187,6 +203,8 @@ export function parseHeadlessArgs(args: readonly string[]): HeadlessParsedComman
     }
     const reasoningEffort = parseReasoningEffort(one(rest, '--reasoning-effort'));
     if (reasoningEffort === 'invalid') return { ok: false, error: 'invalid --reasoning-effort' };
+    const modelBackendVariant = parseModelBackendVariant(one(rest, '--model-backend-variant'));
+    if (modelBackendVariant === 'invalid') return { ok: false, error: 'invalid --model-backend-variant' };
     const timeoutMs = parseTimeoutMs(one(rest, '--timeout'), 300_000);
     if (timeoutMs === 'invalid') return { ok: false, error: '--timeout must be 1..86400 seconds' };
     const positional = positionals(rest, valueFlags, ['--wait', '--json']);
@@ -211,6 +229,7 @@ export function parseHeadlessArgs(args: readonly string[]): HeadlessParsedComman
       title: one(rest, '--title')?.trim(),
       workingDir: one(rest, '--working-dir')?.trim(),
       model: one(rest, '--model')?.trim(),
+      modelBackendVariant,
       reasoningEffort,
       wait: has(rest, '--wait'),
       timeoutMs,
@@ -373,7 +392,7 @@ async function getJson(daemon: OnlineDaemonInfo, path: string): Promise<{ status
 
 async function createHeadless(
   daemon: OnlineDaemonInfo,
-  input: { title?: string; workingDir?: string; model?: string; reasoningEffort?: ReasoningEffort },
+  input: { title?: string; workingDir?: string; model?: string; modelBackendVariant?: ModelBackendVariant; reasoningEffort?: ReasoningEffort },
 ): Promise<{ ok: true; headlessId: string; sessionId: string } | { ok: false; error: string; status?: number }> {
   const response = await postJson(daemon, '/api/headless/sessions', input);
   if (response.status >= 200 && response.status < 300 && response.body?.ok) {
@@ -394,6 +413,7 @@ function buildTriggerRequest(input: {
   title?: string;
   model?: string;
   reasoningEffort?: ReasoningEffort;
+  modelBackendVariant?: ModelBackendVariant;
 }): TriggerRequest {
   const receivedAt = new Date().toISOString();
   return {
@@ -421,6 +441,7 @@ function buildTriggerRequest(input: {
       asyncReturnSessionId: true,
       ...(input.model ? { model: input.model } : {}),
       ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
+      ...(input.modelBackendVariant ? { modelBackendVariant: input.modelBackendVariant } : {}),
     },
   };
 }
@@ -431,6 +452,7 @@ async function dispatchHeadlessRun(input: {
   prompt: string;
   title?: string;
   model?: string;
+  modelBackendVariant?: ModelBackendVariant;
   reasoningEffort?: ReasoningEffort;
 }): Promise<TriggerResponse & { ok: boolean }> {
   const request = buildTriggerRequest({
@@ -440,6 +462,7 @@ async function dispatchHeadlessRun(input: {
     prompt: input.prompt,
     title: input.title,
     model: input.model,
+    modelBackendVariant: input.modelBackendVariant,
     reasoningEffort: input.reasoningEffort,
   });
   const response = await postJson(input.daemon, '/api/trigger', request);
@@ -478,6 +501,9 @@ function compactSession(record: HeadlessSessionRecord): Record<string, unknown> 
     larkAppId: record.larkAppId,
     title: record.title,
     workingDir: record.workingDir,
+    model: record.model,
+    modelBackendVariant: record.modelBackendVariant,
+    reasoningEffort: record.reasoningEffort,
     latestTriggerId: record.latestTriggerId,
     lastRunAt: record.lastRunAt,
     boundChatId: record.boundChatId,
@@ -526,6 +552,7 @@ export async function cmdHeadless(args: readonly string[]): Promise<number> {
         title: parsed.title,
         workingDir: parsed.workingDir,
         model: parsed.model,
+        modelBackendVariant: parsed.modelBackendVariant,
         reasoningEffort: parsed.reasoningEffort,
       });
       if (!created.ok) return fail(created.error, parsed.json);
@@ -560,6 +587,7 @@ export async function cmdHeadless(args: readonly string[]): Promise<number> {
           title: parsed.title,
           workingDir: parsed.workingDir,
           model: parsed.model,
+          modelBackendVariant: parsed.modelBackendVariant,
           reasoningEffort: parsed.reasoningEffort,
         });
         if (!made.ok) return fail(made.error, parsed.json);
@@ -572,6 +600,7 @@ export async function cmdHeadless(args: readonly string[]): Promise<number> {
         prompt: parsed.prompt,
         title: parsed.title,
         model: parsed.model,
+        modelBackendVariant: parsed.modelBackendVariant,
         reasoningEffort: parsed.reasoningEffort,
       });
       if (!queued.ok) {

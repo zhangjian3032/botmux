@@ -111,6 +111,7 @@ beforeEach(() => {
   process.env.SESSION_DATA_DIR = tempDir;
   sessionSeq = 0; createdSessions.length = 0;
   forkShouldThrow = false;
+  mockGetBot.mockReturnValue({ config: { cliId: 'codex-app', apiOnly: true } });
   mockForkWorker.mockClear(); mockCloseSession.mockClear();
 });
 afterEach(() => {
@@ -128,6 +129,20 @@ describe('triggerSessionTurn — idempotency dispatch (real stores)', () => {
     const lease = idempotencyStore.lookup(APP, 'k-1');
     expect(lease?.state).toBe('attempting'); // barrier crossed before fork
     expect(lease?.sessionId).toBe(res.target?.sessionId);
+  });
+
+  it('fresh TraeX async trigger freezes the per-turn backend variant', async () => {
+    mockGetBot.mockReturnValue({ config: { cliId: 'traex', apiOnly: true } });
+    const req = freshAsyncReq('k-variant') as any;
+    req.options.model = 'gpt-5.5-modelhub-crawl';
+    req.options.modelBackendVariant = 'standard';
+
+    const res = await triggerSessionTurn(req, { larkAppId: APP, activeSessions: new Map() });
+
+    expect(res.ok).toBe(true);
+    expect(createdSessions[0].modelBackendVariant).toBe('standard');
+    expect(mockForkWorker.mock.calls[0][0].session.modelBackendVariant).toBe('standard');
+    mockGetBot.mockReturnValue({ config: { cliId: 'codex-app', apiOnly: true } });
   });
 
   it('same key + same payload retry: reuses, does NOT fork again', async () => {
