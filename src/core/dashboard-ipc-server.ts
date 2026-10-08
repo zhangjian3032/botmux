@@ -26,6 +26,7 @@ import {
   cliModelSupportsReasoningEffort,
   isConfigurableReasoningCliId,
   isCodexReasoningEffort,
+  isModelReasoningEffort,
 } from '../services/codex-reasoning-effort.js';
 import * as asyncTriggerStore from '../services/async-trigger-store.js';
 import { resolveAsyncTriggerState, decideAsyncOwnership } from '../services/async-trigger-state.js';
@@ -2748,7 +2749,7 @@ function parseHeadlessCreateBody(body: unknown): {
     out.modelBackendVariant = b.modelBackendVariant;
   }
   if (b.reasoningEffort !== undefined) {
-    if (!isCodexReasoningEffort(b.reasoningEffort)) {
+    if (!isModelReasoningEffort(b.reasoningEffort)) {
       return { ok: false, status: 400, error: 'invalid_reasoning_effort' };
     }
     out.reasoningEffort = b.reasoningEffort as HeadlessReasoningEffort;

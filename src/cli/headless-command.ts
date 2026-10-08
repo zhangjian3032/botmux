@@ -16,7 +16,7 @@ import type { TriggerRequest, TriggerResponse } from '../services/trigger-types.
 type ReasoningEffort = NonNullable<HeadlessSessionRecord['reasoningEffort']>;
 type ModelBackendVariant = NonNullable<HeadlessSessionRecord['modelBackendVariant']>;
 
-const REASONING_EFFORTS = new Set<ReasoningEffort>(['low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
+const REASONING_EFFORTS = new Set<ReasoningEffort>(['none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']);
 const MODEL_BACKEND_VARIANTS = new Set<ModelBackendVariant>(['standard', 'max']);
 
 const USAGE = `botmux headless
@@ -24,11 +24,11 @@ const USAGE = `botmux headless
 Usage:
   botmux headless create [--bot <larkAppId>] [--title <title>] [--working-dir <dir>]
                           [--model <model>] [--model-backend-variant <variant>]
-                          [--reasoning-effort <effort>] [--json]
+                          [--reasoning-effort <none|effort>] [--json]
   botmux headless run [--session <id>] [prompt...] [--prompt <text>|--prompt-file <path>]
                        [--bot <larkAppId>] [--title <title>] [--working-dir <dir>]
                        [--model <model>] [--model-backend-variant <variant>]
-                       [--reasoning-effort <effort>]
+                       [--reasoning-effort <none|effort>]
                        [--wait] [--timeout <seconds>] [--json]
   botmux headless send --session <id> [prompt...] [--prompt <text>|--prompt-file <path>]
                         [--model-backend-variant <variant>]

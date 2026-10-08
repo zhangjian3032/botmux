@@ -14,7 +14,7 @@ Usage:
   botmux session start --headless --bot <bot> --working-dir <dir>
                        --prompt-file <path> [--json]
                        [--model <model>] [--model-backend-variant <variant>]
-                       [--reasoning-effort <effort>]
+                       [--reasoning-effort <none|effort>]
                        [--timeout <seconds>] [--name <title>]
   botmux session send <session-id> --prompt-file <path> [--wait] [--json]
   botmux session wait <session-id> [--trigger-id <triggerId>] [--json]

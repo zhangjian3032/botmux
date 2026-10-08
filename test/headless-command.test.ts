@@ -63,6 +63,19 @@ describe('headless command parsing', () => {
     expect(parseHeadlessArgs(['result', 'hl_1', '--wat']).ok).toBe(false);
   });
 
+  it('accepts none as an explicit reasoning override', () => {
+    expect(parseHeadlessArgs(['create', '--reasoning-effort', 'none'])).toMatchObject({
+      ok: true,
+      kind: 'create',
+      reasoningEffort: 'none',
+    });
+    expect(parseHeadlessArgs(['run', '--prompt', 'x', '--reasoning-effort', 'none'])).toMatchObject({
+      ok: true,
+      kind: 'run',
+      reasoningEffort: 'none',
+    });
+  });
+
   it('parses publish and bind targets', () => {
     expect(parseHeadlessArgs([
       'publish', 'hl_1', '--into', 'om_1', '--trigger-id', 'trg_1', '--json',
@@ -140,7 +153,7 @@ describe('headless session store', () => {
       workingDir: dir,
       model: 'gpt-5.6-terra',
       modelBackendVariant: 'standard',
-      reasoningEffort: 'high',
+      reasoningEffort: 'none',
     });
     saveHeadlessSession(record);
 
@@ -149,7 +162,7 @@ describe('headless session store', () => {
       sessionId: 'session-1',
       model: 'gpt-5.6-terra',
       modelBackendVariant: 'standard',
-      reasoningEffort: 'high',
+      reasoningEffort: 'none',
     });
     expect(readHeadlessSession('session-1')?.id).toBe(id);
   });

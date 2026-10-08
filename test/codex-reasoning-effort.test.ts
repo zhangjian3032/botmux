@@ -34,6 +34,13 @@ describe('Grok model-aware reasoning efforts', () => {
     expect(isConfigurableReasoningCliId('gemini')).toBe(false);
   });
 
+  it('allows none only for CLIs that use model_reasoning_effort config', () => {
+    expect(cliModelSupportsReasoningEffort('traex', 'gpt-5.5-modelhub-crawl', 'none')).toBe(true);
+    expect(cliModelSupportsReasoningEffort('codex', 'gpt-5.5', 'none')).toBe(true);
+    expect(cliModelSupportsReasoningEffort('grok', 'grok-4.6', 'none')).toBe(false);
+    expect(cliModelSupportsReasoningEffort('claude-code', 'claude-opus-5', 'none')).toBe(false);
+  });
+
   it('exposes xhigh only for grok-4.6', () => {
     expect(reasoningEffortsForCliModel('grok', 'grok-4.6')).toEqual(GROK_REASONING_EFFORTS);
     expect(cliModelSupportsReasoningEffort('grok', 'grok-4.6', 'xhigh')).toBe(true);

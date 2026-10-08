@@ -35,6 +35,7 @@ import { buildStreamingCard, buildPrivateSnapshotCard, buildSessionCard, buildTu
 import { codexServiceTierBadge } from '../services/codex-service-tier.js';
 import { isFableModelId, normalizeClaudeModelId } from '../services/claude-transcript.js';
 import { cliModelSupportsReasoningEffort, isConfigurableReasoningCliId } from '../services/codex-reasoning-effort.js';
+import type { ModelReasoningEffort } from '../services/codex-reasoning-effort.js';
 import { RPC_CAPABLE_CLIS } from '../codex-rpc-lifecycle.js';
 import { loadFrozenCards, saveFrozenCards } from '../services/frozen-card-store.js';
 import { hashUrlForLog } from '../adapters/backend/riff-backend.js';
@@ -136,6 +137,27 @@ function workerForkExecArgv(): string[] {
  *  ds reference itself) is gone. Entries release on worker exit, so the map
  *  stays bounded by in-flight retirements. */
 const lifecycleRetiringBySessionId = new Map<string, Set<ChildProcess>>();
+
+function singlePendingHeadlessAsyncTurnId(
+  ds: DaemonSession,
+  incomingTurnId: string,
+): string | undefined {
+  if (!isHeadlessSessionChatId(ds.chatId)) return undefined;
+  if (ds.asyncTriggerResults?.has(incomingTurnId)) return incomingTurnId;
+  const pending = [...(ds.asyncTriggerResults ?? new Map()).entries()]
+    .filter(([, result]) => result.status === 'pending');
+  return pending.length === 1 ? pending[0]![0] : undefined;
+}
+
+function singlePendingHeadlessWaitTurnId(
+  ds: DaemonSession,
+  incomingTurnId: string,
+): string | undefined {
+  if (!isHeadlessSessionChatId(ds.chatId)) return undefined;
+  if (ds.pendingWaitPromises?.has(incomingTurnId)) return incomingTurnId;
+  const pending = [...(ds.pendingWaitPromises ?? new Map()).keys()];
+  return pending.length === 1 ? pending[0] : undefined;
+}
 
 function trackLifecycleRetirement(ds: DaemonSession, worker: ChildProcess): void {
   let workers = lifecycleRetiringWorkers.get(ds);
@@ -530,6 +552,7 @@ import {
   isHttpVirtualSession,
   larkTransportEnabled,
   remoteRetirementAdmissionPhase,
+  isHeadlessSessionChatId,
   type DaemonSession,
 } from './types.js';
 import { hasProtectedSessionMutationOwnership } from './session-mutation-guard.js';
@@ -1641,8 +1664,8 @@ function recordLaunchModel(ds: DaemonSession, model: string | undefined): void {
 
 function sessionAgentConfig(
   ds: DaemonSession,
-  botCfg: { cliId: CliId; cliRuntime?: CliRuntimeConfig; cliPathOverride?: string; wrapperCli?: string; model?: string; modelBackendVariant?: 'standard' | 'max'; reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'; launchShell?: string; startupCommands?: string[]; env?: Record<string, string>; backendType?: string; riff?: unknown; codexRpcInput?: boolean },
-): { cliId: CliId; cliRuntime?: CliRuntimeSnapshot; cliPathOverride?: string; wrapperCli?: string; model?: string; modelBackendVariant?: 'standard' | 'max'; reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'; launchShell?: string; startupCommands?: string[] } {
+  botCfg: { cliId: CliId; cliRuntime?: CliRuntimeConfig; cliPathOverride?: string; wrapperCli?: string; model?: string; modelBackendVariant?: 'standard' | 'max'; reasoningEffort?: ModelReasoningEffort; launchShell?: string; startupCommands?: string[]; env?: Record<string, string>; backendType?: string; riff?: unknown; codexRpcInput?: boolean },
+): { cliId: CliId; cliRuntime?: CliRuntimeSnapshot; cliPathOverride?: string; wrapperCli?: string; model?: string; modelBackendVariant?: 'standard' | 'max'; reasoningEffort?: ModelReasoningEffort; launchShell?: string; startupCommands?: string[] } {
   const selected = ds.session.cliLaunchSnapshot;
   if (selected) {
     if (selected.cliId.toLowerCase() === 'riff') throw new Error('CLI selection rejected: Riff requires bot-level backend configuration and cannot be selected per session');
@@ -13670,20 +13693,22 @@ function setupWorkerHandlers(
         let nonLarkFailureHandled = false;
         if (isClaudeProviderFailure && !ds.session.vcMeetingReceiver) {
           const failureCode = msg.errorCode ?? msg.status;
-          const waitPromise = ds.pendingWaitPromises?.get(msg.turnId);
+          const waitTurnId = singlePendingHeadlessWaitTurnId(ds, msg.turnId) ?? msg.turnId;
+          const waitPromise = ds.pendingWaitPromises?.get(waitTurnId);
           if (waitPromise) {
             nonLarkFailureHandled = true;
-            ds.pendingWaitPromises?.delete(msg.turnId);
+            ds.pendingWaitPromises?.delete(waitTurnId);
             const failure = new Error(`Claude turn failed: ${failureCode}`);
             if (waitPromise.reject) waitPromise.reject(failure);
             else waitPromise.resolve(`ERROR: ${failure.message}`);
             logger.info(
-              `[${t}] Settled Wait Mode HTTP turn ${msg.turnId.substring(0, 8)} `
+              `[${t}] Settled Wait Mode HTTP turn ${waitTurnId.substring(0, 8)} `
               + `failed (${failureCode})`,
             );
           }
 
-          const asyncResult = ds.asyncTriggerResults?.get(msg.turnId);
+          const asyncTurnId = singlePendingHeadlessAsyncTurnId(ds, msg.turnId) ?? msg.turnId;
+          const asyncResult = ds.asyncTriggerResults?.get(asyncTurnId);
           const asyncSink = !!asyncResult
             || virtualDeliverySinkForChatId(ds.chatId) === 'http_async';
           if (asyncSink) {
@@ -13694,10 +13719,10 @@ function setupWorkerHandlers(
               // the ordered terminal IPC. Never replace known output with a
               // later failure boundary, even if its best-effort durable write
               // has not landed yet.
-              ds.idempotentAsyncTurns?.delete(msg.turnId);
+              ds.idempotentAsyncTurns?.delete(asyncTurnId);
               logger.info(
                 `[${t}] Ignored failed terminal for completed async HTTP turn `
-                + msg.turnId.substring(0, 8),
+                + asyncTurnId.substring(0, 8),
               );
             } else {
               if (asyncResult?.status === 'pending') {
@@ -13709,7 +13734,7 @@ function setupWorkerHandlers(
               try {
                 const outcome = asyncTriggerStore.recordTerminalFailureStrict(
                   ds.session.sessionId,
-                  msg.turnId,
+                  asyncTurnId,
                   failedAt,
                   ds.larkAppId,
                   failureCode,
@@ -13717,7 +13742,7 @@ function setupWorkerHandlers(
                 if (outcome === 'already_completed') {
                   // Durable completed proof is stronger. Drop a stale in-memory
                   // pending/failed projection so trigger-result reads that proof.
-                  ds.asyncTriggerResults?.delete(msg.turnId);
+                  ds.asyncTriggerResults?.delete(asyncTurnId);
                 }
               } catch (err) {
                 // The live failed projection still terminates current-daemon
@@ -13725,13 +13750,13 @@ function setupWorkerHandlers(
                 // report the lost restart guarantee explicitly.
                 logger.error(
                   `[${t}] Failed to persist async worker terminal for `
-                  + `${msg.turnId.substring(0, 8)}: `
+                  + `${asyncTurnId.substring(0, 8)}: `
                   + `${err instanceof Error ? err.message : String(err)}`,
                 );
               }
-              ds.idempotentAsyncTurns?.delete(msg.turnId);
+              ds.idempotentAsyncTurns?.delete(asyncTurnId);
               logger.info(
-                `[${t}] Settled async HTTP turn ${msg.turnId.substring(0, 8)} `
+                `[${t}] Settled async HTTP turn ${asyncTurnId.substring(0, 8)} `
                 + `failed (${failureCode})`,
               );
             }
@@ -13810,22 +13835,23 @@ function setupWorkerHandlers(
         if (msg.status === 'completed'
           && msg.outputDisposition === 'nothing_to_send'
           && !ds.session.vcMeetingReceiver) {
-          const pendingAsync = ds.asyncTriggerResults?.get(msg.turnId);
+          const asyncTurnId = singlePendingHeadlessAsyncTurnId(ds, msg.turnId) ?? msg.turnId;
+          const pendingAsync = ds.asyncTriggerResults?.get(asyncTurnId);
           if (pendingAsync && pendingAsync.status === 'pending') {
             const completedAt = Date.now();
             pendingAsync.status = 'completed';
             pendingAsync.content = '';
             pendingAsync.completedAt = completedAt;
             try {
-              asyncTriggerStore.recordCompleted(ds.session.sessionId, msg.turnId, '', completedAt, ds.larkAppId);
+              asyncTriggerStore.recordCompleted(ds.session.sessionId, asyncTurnId, '', completedAt, ds.larkAppId);
             } catch (err: any) {
-              logger.error(`[${t}] Failed to persist async terminal-settle for ${msg.turnId.substring(0, 8)}: ${err.message}`);
+              logger.error(`[${t}] Failed to persist async terminal-settle for ${asyncTurnId.substring(0, 8)}: ${err.message}`);
             }
             // Cleared like the final_output path so worker-exit convergence does
             // not retro-fail this now-completed turn. Per-triggerId delete so a
             // concurrent sibling keyed turn's convergence entry is untouched.
-            ds.idempotentAsyncTurns?.delete(msg.turnId);
-            logger.info(`[${t}] Settled async HTTP turn ${msg.turnId.substring(0, 8)} completed (empty output; nothing-to-send)`);
+            ds.idempotentAsyncTurns?.delete(asyncTurnId);
+            logger.info(`[${t}] Settled async HTTP turn ${asyncTurnId.substring(0, 8)} completed (empty output; nothing-to-send)`);
           }
         }
         // Deliberate-silence closure (positive evidence only — the same
@@ -14755,16 +14781,18 @@ function deliverFinalOutput(
   // output, resolve the Promise immediately, and DO NOT send it to Lark.
   // Dedicated receivers are structurally pinned to their audited listener
   // action and may never be diverted into these generic host-side sinks.
-  const waitPromise = managedReceiver ? undefined : ds.pendingWaitPromises?.get(msg.turnId);
+  const waitTurnId = singlePendingHeadlessWaitTurnId(ds, msg.turnId) ?? msg.turnId;
+  const waitPromise = managedReceiver ? undefined : ds.pendingWaitPromises?.get(waitTurnId);
   if (waitPromise) {
     waitPromise.resolve(msg.content);
     ds.lastBridgeEmittedUuid = finalOutputDedupeKey(ds, msg);
-    logger.info(`[${t}] Intercepted final_output for Wait Mode HTTP request (turn ${msg.turnId.substring(0, 8)})`);
+    logger.info(`[${t}] Intercepted final_output for Wait Mode HTTP request (turn ${waitTurnId.substring(0, 8)})`);
     onComplete?.(true);
     return;
   }
 
-  const asyncResult = managedReceiver ? undefined : ds.asyncTriggerResults?.get(msg.turnId);
+  const asyncTurnId = singlePendingHeadlessAsyncTurnId(ds, msg.turnId) ?? msg.turnId;
+  const asyncResult = managedReceiver ? undefined : ds.asyncTriggerResults?.get(asyncTurnId);
   if (asyncResult) {
     const completedAt = Date.now();
     asyncResult.status = 'completed';
@@ -14774,15 +14802,15 @@ function deliverFinalOutput(
     // Durably persist the outcome so trigger-result can rebuild `completed`
     // (with content + usage) after a daemon restart drops the in-memory Map.
     // Stamp the owning bot for cross-bot isolation.
-    asyncTriggerStore.recordCompleted(ds.session.sessionId, msg.turnId, msg.content, completedAt, ds.larkAppId, msg.usage);
+    asyncTriggerStore.recordCompleted(ds.session.sessionId, asyncTurnId, msg.content, completedAt, ds.larkAppId, msg.usage);
     // This idempotent async turn produced its terminal output — drop its
     // worker-exit convergence entry so a later graceful exit of this generation
     // is not retro-failed (codex #776 round-6 finding #1). Per-triggerId delete so
     // a concurrent sibling keyed turn on the same shared session is untouched
     // (codex #818 P1-1).
-    ds.idempotentAsyncTurns?.delete(msg.turnId);
+    ds.idempotentAsyncTurns?.delete(asyncTurnId);
     ds.lastBridgeEmittedUuid = finalOutputDedupeKey(ds, msg);
-    logger.info(`[${t}] Captured final_output for Async HTTP request (turn ${msg.turnId.substring(0, 8)})`);
+    logger.info(`[${t}] Captured final_output for Async HTTP request (turn ${asyncTurnId.substring(0, 8)})`);
     onComplete?.(true);
     return;
   }

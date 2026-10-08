@@ -1,3 +1,5 @@
+import type { ModelReasoningEffort } from './codex-reasoning-effort.js';
+
 export type TriggerSourceType = 'webhook' | 'ui' | 'workflow' | 'schedule' | 'vc_meeting' | 'headless';
 export type TriggerTargetKind = 'turn' | 'workflow';
 export type TriggerAction = 'queued' | 'delivered' | 'dry_run' | 'ignored' | 'completed';
@@ -74,7 +76,7 @@ export interface TriggerRequest {
     model?: string;
     /** Per-turn reasoning effort. Same
      *  fresh-spawn-only semantics as `model`. */
-    reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
+    reasoningEffort?: ModelReasoningEffort;
     /** Per-turn TraeX backend variant. Fresh-spawn-only like `model`. */
     modelBackendVariant?: 'standard' | 'max';
   };
@@ -264,8 +266,8 @@ export function validateTriggerRequest(raw: unknown): { ok: true; request: Trigg
   if (options.model !== undefined && (typeof options.model !== 'string' || options.model.length > 200)) {
     return { ok: false, status: 400, body: { ok: false, errorCode: 'bad_request', error: 'options.model must be a string (<=200 chars)' } };
   }
-  if (options.reasoningEffort !== undefined && !['low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(options.reasoningEffort as string)) {
-    return { ok: false, status: 400, body: { ok: false, errorCode: 'bad_request', error: 'options.reasoningEffort must be one of low|medium|high|xhigh|max|ultra' } };
+  if (options.reasoningEffort !== undefined && !['none', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'].includes(options.reasoningEffort as string)) {
+    return { ok: false, status: 400, body: { ok: false, errorCode: 'bad_request', error: 'options.reasoningEffort must be one of none|low|medium|high|xhigh|max|ultra' } };
   }
   if (options.modelBackendVariant !== undefined && !['standard', 'max'].includes(options.modelBackendVariant as string)) {
     return { ok: false, status: 400, body: { ok: false, errorCode: 'bad_request', error: 'options.modelBackendVariant must be standard or max' } };

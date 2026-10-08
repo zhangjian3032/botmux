@@ -1,4 +1,5 @@
 export const CODEX_REASONING_EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra'] as const;
+export const NO_REASONING_EFFORT = 'none' as const;
 export const CODEX_COMMON_REASONING_EFFORTS = CODEX_REASONING_EFFORTS.slice(0, 4);
 export const GROK_REASONING_EFFORTS = CODEX_REASONING_EFFORTS.slice(0, 4);
 export const GROK_COMMON_REASONING_EFFORTS = GROK_REASONING_EFFORTS.slice(0, 3);
@@ -32,6 +33,7 @@ export function claudeReasoningEffortsForModel(model: string | undefined): reado
 }
 
 export type CodexReasoningEffort = typeof CODEX_REASONING_EFFORTS[number];
+export type ModelReasoningEffort = CodexReasoningEffort | typeof NO_REASONING_EFFORT;
 
 const SIX_LEVEL_MODELS = new Set(['gpt-5.6-sol', 'gpt-5.6-terra']);
 const FIVE_LEVEL_MODELS = new Set(['gpt-5.6-luna']);
@@ -70,8 +72,16 @@ export function isConfigurableReasoningCliId(cliId: string | undefined): boolean
     || cliId === 'claude-code';
 }
 
+export function cliSupportsNoReasoningEffort(cliId: string | undefined): boolean {
+  return isCodexReasoningCliId(cliId) || cliId === 'traex';
+}
+
 export function isCodexReasoningEffort(value: unknown): value is CodexReasoningEffort {
   return typeof value === 'string' && CODEX_REASONING_EFFORTS.includes(value as CodexReasoningEffort);
+}
+
+export function isModelReasoningEffort(value: unknown): value is ModelReasoningEffort {
+  return value === NO_REASONING_EFFORT || isCodexReasoningEffort(value);
 }
 
 /** Unknown models get only the catalog-wide safe intersection. */
@@ -114,7 +124,8 @@ export function reasoningEffortsForCliModel(
 export function cliModelSupportsReasoningEffort(
   cliId: string | undefined,
   model: string | undefined,
-  effort: CodexReasoningEffort,
+  effort: ModelReasoningEffort,
 ): boolean {
+  if (effort === NO_REASONING_EFFORT) return cliSupportsNoReasoningEffort(cliId);
   return reasoningEffortsForCliModel(cliId, model).includes(effort);
 }

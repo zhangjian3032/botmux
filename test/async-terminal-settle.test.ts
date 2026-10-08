@@ -97,7 +97,7 @@ import type { DaemonSession } from '../src/core/types.js';
 import type { WorkerToDaemon } from '../src/types.js';
 import { EventEmitter } from 'node:events';
 
-function makeDs(): DaemonSession {
+function makeDs(overrides: Partial<DaemonSession> = {}): DaemonSession {
   const fakeWorker = new EventEmitter() as any;
   fakeWorker.killed = false;
   fakeWorker.send = vi.fn();
@@ -128,8 +128,24 @@ function makeDs(): DaemonSession {
     cliVersion: '1',
     lastMessageAt: Date.now(),
     hasHistory: false,
+    ...overrides,
   } as any;
   return ds;
+}
+
+function finalOutputMsg(
+  turnId: string,
+  content: string,
+  extra: Partial<Extract<WorkerToDaemon, { type: 'final_output' }>> = {},
+): Extract<WorkerToDaemon, { type: 'final_output' }> {
+  return {
+    type: 'final_output',
+    sessionId: 'sid-async-settle',
+    turnId,
+    lastUuid: turnId,
+    content,
+    ...extra,
+  };
 }
 
 function terminalMsg(
@@ -178,6 +194,83 @@ describe('async-HTTP settle-on-terminal (daemon turn_terminal handler)', () => {
     );
     // Worker-exit convergence entry dropped (by triggerId) so a later graceful exit can't retro-fail it.
     expect(ds.idempotentAsyncTurns!.get('turn-silent')).toBeUndefined();
+  });
+
+  it('captures headless final_output under the pending trigger id when TraeX rewrites turn ids', async () => {
+    const ds = makeDs({
+      chatId: 'headless_hl_demo',
+      session: {
+        sessionId: 'sid-async-settle',
+        rootMessageId: 'headless_hl_demo',
+        chatId: 'headless_hl_demo',
+        title: 'fixture',
+        status: 'active' as any,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        pid: null,
+        chatType: 'group',
+        cliId: 'traex',
+      } as any,
+    });
+    ds.asyncTriggerResults = new Map([['trg_headless', { status: 'pending' } as any]]);
+    ds.idempotentAsyncTurns = new Map([[
+      'trg_headless',
+      { ownerLarkAppId: 'app_test', key: 'k', kind: 'turn', workerGeneration: 1 } as any,
+    ]]);
+    __testOnly_setupWorkerHandlers(ds, ds.worker as any);
+
+    (ds.worker as any).emit(
+      'message',
+      finalOutputMsg('01a_real_traex_turn', 'finished report'),
+    );
+
+    await vi.waitFor(() => {
+      expect(ds.asyncTriggerResults!.get('trg_headless')).toMatchObject({
+        status: 'completed',
+        content: 'finished report',
+      });
+    });
+    expect(recordCompletedMock).toHaveBeenCalledWith(
+      'sid-async-settle',
+      'trg_headless',
+      'finished report',
+      expect.any(Number),
+      'app_test',
+      undefined,
+    );
+    expect(ds.idempotentAsyncTurns!.get('trg_headless')).toBeUndefined();
+  });
+
+  it('resolves a headless wait promise when final_output arrives with the TraeX turn id', async () => {
+    const ds = makeDs({
+      chatId: 'headless_hl_demo',
+      session: {
+        sessionId: 'sid-async-settle',
+        rootMessageId: 'headless_hl_demo',
+        chatId: 'headless_hl_demo',
+        title: 'fixture',
+        status: 'active' as any,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        pid: null,
+        chatType: 'group',
+        cliId: 'traex',
+      } as any,
+    });
+    const resolve = vi.fn();
+    ds.pendingWaitPromises = new Map([['trg_wait', { resolve } as any]]);
+    __testOnly_setupWorkerHandlers(ds, ds.worker as any);
+
+    (ds.worker as any).emit(
+      'message',
+      finalOutputMsg('01a_real_traex_turn', 'wait report'),
+    );
+
+    await vi.waitFor(() => {
+      expect(resolve).toHaveBeenCalledWith('wait report');
+    });
+    expect(ds.pendingWaitPromises!.has('trg_wait')).toBe(true);
+    expect(recordCompletedMock).not.toHaveBeenCalled();
   });
 
   it('does NOT settle on a bare completed terminal (no disposition) — the RPC-hydration-timeout case', async () => {

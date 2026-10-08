@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { config } from '../config.js';
 import { HEADLESS_CHAT_PREFIX, isHeadlessSessionChatId } from '../core/types.js';
+import type { ModelReasoningEffort } from './codex-reasoning-effort.js';
 import { atomicWriteFileSync } from '../utils/atomic-write.js';
 import { withFileLockSync } from '../utils/file-lock.js';
 
@@ -18,7 +19,7 @@ export interface HeadlessSessionRecord {
   workingDir?: string;
   model?: string;
   modelBackendVariant?: 'standard' | 'max';
-  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
+  reasoningEffort?: ModelReasoningEffort;
   createdAt: string;
   updatedAt: string;
   latestTriggerId?: string;
@@ -100,7 +101,8 @@ function parseRecord(raw: unknown): HeadlessSessionRecord | null {
     out.modelBackendVariant = raw.modelBackendVariant;
   }
   if (
-    raw.reasoningEffort === 'low' || raw.reasoningEffort === 'medium'
+    raw.reasoningEffort === 'none'
+    || raw.reasoningEffort === 'low' || raw.reasoningEffort === 'medium'
     || raw.reasoningEffort === 'high' || raw.reasoningEffort === 'xhigh'
     || raw.reasoningEffort === 'max' || raw.reasoningEffort === 'ultra'
   ) out.reasoningEffort = raw.reasoningEffort;

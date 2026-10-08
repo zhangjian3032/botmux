@@ -56,6 +56,7 @@ import { validateZellijAdoptTarget } from './zellij-adopt-discovery.js';
 import type { BackendType, SessionProbe } from '../adapters/backend/types.js';
 import { backendSupportsWebTerminal } from '../adapters/backend/capabilities.js';
 import type { ChatContext, CliTurnPayload, CodexAppAdditionalContextEntry, CodexAppTurnInput, LarkAttachment, LarkMention, ScheduledTask, Session, SubstituteTrigger } from '../types.js';
+import type { ModelReasoningEffort } from '../services/codex-reasoning-effort.js';
 import { trustedCallerForScheduledTask } from './scheduled-turn-provenance.js';
 import { addCodexAppContext } from '../utils/codex-app-context.js';
 import { hasUnsettledCodexAppDispatch } from '../utils/codex-app-dispatch-ledger.js';
@@ -4295,7 +4296,7 @@ export interface CreateHeadlessSessionArgs {
   workingDir?: string;
   model?: string;
   modelBackendVariant?: 'standard' | 'max';
-  reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
+  reasoningEffort?: ModelReasoningEffort;
 }
 
 export async function createHeadlessSession(

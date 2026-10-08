@@ -255,7 +255,9 @@ export function createTraexAdapter(pathOverride?: string): CliAdapter {
         ...goalEnvConfigArgs(),
       ];
       if (model && model.trim()) baseArgs.push('--model', model.trim());
-      if (reasoningEffort) baseArgs.push('-c', `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`);
+      if (reasoningEffort) {
+        baseArgs.push('-c', `model_reasoning_effort=${JSON.stringify(reasoningEffort)}`);
+      }
       if (modelBackendVariant) baseArgs.push('-c', `model_backend_variant=${JSON.stringify(modelBackendVariant)}`);
       if (nativeSubagentRuntimeHookCommand) {
         baseArgs.push('-c', traexNativeSubagentHookConfig(nativeSubagentRuntimeHookCommand));

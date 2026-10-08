@@ -15,6 +15,8 @@ describe('session command parsing', () => {
       'task.md',
       '--model-backend-variant',
       'standard',
+      '--reasoning-effort',
+      'none',
       '--json',
     ])).toMatchObject({
       ok: true,
@@ -24,6 +26,7 @@ describe('session command parsing', () => {
       workingDir: '/repo',
       promptFile: 'task.md',
       modelBackendVariant: 'standard',
+      reasoningEffort: 'none',
       json: true,
     });
   });

@@ -1,3 +1,4 @@
+import type { ModelReasoningEffort } from '../../services/codex-reasoning-effort.js';
 import type { CodexAppTurnInput, TrustedCaller } from '../../types.js';
 
 export interface PtyHandle {
@@ -189,7 +190,7 @@ export interface CliAdapter {
      *  `--effort`). Only adapters with an explicit reasoning control honor it;
      *  others ignore. Note the accepted set is per-CLI: `ultra` is codex/traex
      *  only — Claude Code rejects it with a warning, so its adapter filters. */
-    reasoningEffort?: 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra';
+    reasoningEffort?: ModelReasoningEffort;
     /** Optional TraeX process-scoped backend variant. Missing means inherit
      * the user's TraeX global configuration; all non-TraeX adapters ignore it. */
     modelBackendVariant?: 'standard' | 'max';
