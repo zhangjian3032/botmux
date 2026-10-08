@@ -30,6 +30,10 @@ import {
 } from '../services/codex-reasoning-effort.js';
 import * as asyncTriggerStore from '../services/async-trigger-store.js';
 import { resolveAsyncTriggerState, decideAsyncOwnership } from '../services/async-trigger-state.js';
+import {
+  drainTraexRollout,
+  findTraexRolloutBySessionId,
+} from '../services/traex-transcript.js';
 import * as scheduleStore from '../services/schedule-store.js';
 import type { ScheduleReasoningEffort } from '../services/schedule-store.js';
 import { queryScheduleRunLogs } from '../services/schedule-run-log-store.js';
@@ -2404,6 +2408,75 @@ function sessionTransportDisabled(s: { chatId?: string; larkAppId?: string }): b
   return !larkTransportEnabled({ chatId: s.chatId ?? '', apiOnly });
 }
 
+function usageFromTraexFinal(
+  rolloutPath: string,
+): { inputTokens: number; outputTokens: number; cacheReadTokens: number; cacheCreateTokens: number } | undefined {
+  try {
+    let last: { inputTokens: number; outputTokens: number } | undefined;
+    for (const line of readFileSync(rolloutPath, 'utf8').split('\n')) {
+      if (!line.trim()) continue;
+      let item: any;
+      try { item = JSON.parse(line); } catch { continue; }
+      if (item?.type !== 'token_usage_record'
+        && !(item?.type === 'event_msg' && item?.payload?.type === 'token_usage_record')) continue;
+      const usage = item?.payload?.thread_token_usage ?? item?.payload?.turn_token_usage ?? item?.payload?.usage;
+      const inputTokens = Number(usage?.input_tokens);
+      const outputTokens = Number(usage?.output_tokens);
+      if (Number.isFinite(inputTokens) && Number.isFinite(outputTokens)) {
+        last = {
+          inputTokens,
+          outputTokens,
+        };
+      }
+    }
+    return last
+      ? {
+          ...last,
+          cacheReadTokens: 0,
+          cacheCreateTokens: 0,
+        }
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function tryCompletePendingTraexAsyncTrigger(
+  sessionId: string,
+  triggerId: string | undefined,
+  stored: Session | undefined,
+  persisted: ReturnType<typeof asyncTriggerStore.lookup> | undefined,
+): ReturnType<typeof asyncTriggerStore.lookup> | undefined {
+  if (!stored || stored.cliId !== 'traex' || !stored.chatId.startsWith('headless_')) {
+    return persisted;
+  }
+  const resolvedTriggerId = triggerId ?? persisted?.triggerId;
+  if (!resolvedTriggerId || persisted?.result.status !== 'pending') return persisted;
+  if (!stored.cliSessionId) return persisted;
+  const rolloutPath = findTraexRolloutBySessionId(stored.cliSessionId);
+  if (!rolloutPath) return persisted;
+  const finals = drainTraexRollout(rolloutPath, 0, {
+    adoptMode: false,
+    probe: true,
+  }).events.filter(event => event.kind === 'assistant_final');
+  const final = finals.at(-1);
+  if (!final || final.terminalStatus === 'failed' || final.terminalStatus === 'ambiguous') {
+    return persisted;
+  }
+  const completedAt = final.timestampMs;
+  const ownerLarkAppId = stored.larkAppId ?? persisted.ownerLarkAppId;
+  if (!ownerLarkAppId) return persisted;
+  asyncTriggerStore.recordCompleted(
+    sessionId,
+    resolvedTriggerId,
+    final.text,
+    completedAt,
+    ownerLarkAppId,
+    usageFromTraexFinal(rolloutPath),
+  );
+  return asyncTriggerStore.lookup(sessionId, resolvedTriggerId) ?? persisted;
+}
+
 /** Mutating IPC routes may only touch this daemon's own bot-partitioned store. */
 function findOwnedSessionRecord(sessionId: string): Session | undefined {
   return findActiveBySessionId(sessionId)?.session ?? sessionStore.getOwnedSession(sessionId);
@@ -2441,7 +2514,13 @@ function buildAsyncTriggerLookupResponse(sessionId: string, triggerId?: string):
     persistedExists: !!persistedRaw,
   });
   const stored = decision.keepStored ? storedRaw : undefined;
-  const persisted = decision.keepPersisted ? persistedRaw : undefined;
+  let persisted = decision.keepPersisted ? persistedRaw : undefined;
+  persisted = tryCompletePendingTraexAsyncTrigger(
+    sessionId,
+    triggerId,
+    stored,
+    persisted,
+  );
 
   if (decision.foreignLeak) {
     return {
@@ -2541,6 +2620,8 @@ function buildAsyncTriggerLookupResponse(sessionId: string, triggerId?: string):
   }
   return resolved;
 }
+
+export const __testOnly_buildAsyncTriggerLookupResponse = buildAsyncTriggerLookupResponse;
 
 // 看板放置：dashboard 看板视图拖拽卡片后持久化列 + 列内排序位置。
 // 改完广播 session.update，所有打开的 dashboard 实时同步。

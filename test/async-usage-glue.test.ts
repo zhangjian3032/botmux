@@ -8,11 +8,12 @@
  * Run: pnpm vitest run test/async-usage-glue.test.ts
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 let tempDir: string;
+let storedSession: any | undefined;
 
 // Real async-trigger-store, but its dataDir points at a temp dir so we assert
 // actual on-disk persistence. config is the only dep the async branch needs.
@@ -28,8 +29,29 @@ vi.mock('../src/utils/logger.js', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 
+vi.mock('../src/services/session-store.js', () => ({
+  getSession: (sessionId: string) =>
+    storedSession?.sessionId === sessionId ? storedSession : undefined,
+  getOwnedSession: (sessionId: string) =>
+    storedSession?.sessionId === sessionId ? storedSession : undefined,
+  listSessions: () => storedSession ? [storedSession] : [],
+  updateSession: vi.fn(),
+}));
+
+vi.mock('../src/bot-registry.js', async importOriginal => {
+  const actual = await importOriginal<typeof import('../src/bot-registry.js')>();
+  return {
+    ...actual,
+    getBot: vi.fn(() => ({ config: { larkAppId: 'cli_test', cliId: 'traex' } })),
+  };
+});
+
 import * as asyncTriggerStore from '../src/services/async-trigger-store.js';
 import { __testOnly_deliverFinalOutput } from '../src/core/worker-pool.js';
+import {
+  __testOnly_buildAsyncTriggerLookupResponse,
+  setLarkAppId,
+} from '../src/core/dashboard-ipc-server.js';
 
 const USAGE = { inputTokens: 60, outputTokens: 30, cacheReadTokens: 40, cacheCreateTokens: 0 };
 
@@ -52,8 +74,16 @@ function finalMsg(turnId: string, withUsage: boolean): any {
   };
 }
 
-beforeEach(() => { tempDir = mkdtempSync(join(tmpdir(), 'async-usage-glue-')); });
-afterEach(() => { rmSync(tempDir, { recursive: true, force: true }); });
+beforeEach(() => {
+  tempDir = mkdtempSync(join(tmpdir(), 'async-usage-glue-'));
+  process.env.TRAE_HOME = join(tempDir, 'trae-home');
+  setLarkAppId('cli_test');
+  storedSession = undefined;
+});
+afterEach(() => {
+  delete process.env.TRAE_HOME;
+  rmSync(tempDir, { recursive: true, force: true });
+});
 
 describe('final_output → durable usage persistence (memory + disk + restart)', () => {
   it('persists usage into the async store and it survives a fresh (restart) lookup', () => {
@@ -96,5 +126,64 @@ describe('trigger-result wrapper wires usage from both mem and persisted (source
     expect(body).toMatch(/memResult\?\.usage|usage: memResult\.usage/);
     // persisted result is passed whole (its `result.usage` reaches the resolver)
     expect(body).toContain('persisted');
+  });
+});
+
+describe('trigger-result TraeX durable transcript fallback', () => {
+  it('completes a pending headless trigger from task_complete when bridge final_output was missed', () => {
+    const cliSessionId = '01a_headless_traex';
+    const sessionId = 'sess-headless-traex';
+    const triggerId = 'trg_headless';
+    const sessionsDir = join(process.env.TRAE_HOME!, 'cli', 'sessions', '2026', '10', '08');
+    mkdirSync(sessionsDir, { recursive: true });
+    const rollout = join(sessionsDir, `rollout-2026-10-08T12-00-00-${cliSessionId}.jsonl`);
+    writeFileSync(rollout, [
+      JSON.stringify({
+        timestamp: '2026-10-08T04:00:00.000Z',
+        type: 'event_msg',
+        payload: {
+          type: 'token_usage_record',
+          usage: { input_tokens: 7, output_tokens: 3 },
+        },
+      }),
+      JSON.stringify({
+        timestamp: '2026-10-08T04:00:01.000Z',
+        type: 'event_msg',
+        payload: {
+          type: 'task_complete',
+          turn_id: '01a_real_turn',
+          last_agent_message: 'durable report',
+        },
+      }),
+    ].join('\n') + '\n');
+    storedSession = {
+      sessionId,
+      chatId: 'headless_hl_demo',
+      rootMessageId: 'headless_hl_demo',
+      status: 'active',
+      larkAppId: 'cli_test',
+      cliId: 'traex',
+      cliSessionId,
+    };
+    asyncTriggerStore.recordPending(sessionId, triggerId, 1, 'cli_test');
+
+    const response = __testOnly_buildAsyncTriggerLookupResponse(sessionId, triggerId);
+
+    expect(response).toMatchObject({
+      ok: true,
+      state: 'completed',
+      triggerId,
+      output: { content: 'durable report' },
+    });
+    expect(asyncTriggerStore.lookup(sessionId, triggerId)?.result).toMatchObject({
+      status: 'completed',
+      content: 'durable report',
+      usage: {
+        inputTokens: 7,
+        outputTokens: 3,
+        cacheReadTokens: 0,
+        cacheCreateTokens: 0,
+      },
+    });
   });
 });
